@@ -16,6 +16,7 @@ bool returnFlg = false;
 bool loopFlg = false;
 const char* types[] = {"type void", "type int", "type bool", "type char", "type char", "equal", "undefined type", "error"};
 
+
 void semantic(TreeNode *syntaxTree)
 {
 
@@ -646,7 +647,7 @@ ExpType insertNode(TreeNode *t)
 
                 }
                 else if(c1 != boolean){
-                    printf("ERROR(%d): Expecting Boolean test condition in %s statement but got %s.\n", t->lineno, t->kind.stmt, types[c1]);
+                    printf("ERROR(%d): Expecting Boolean test condition in %s statement but got %s.\n", t->lineno, getStmtKind(t->kind.stmt), types[c1]);
                     numErrors++;
                 }
 
@@ -659,7 +660,7 @@ ExpType insertNode(TreeNode *t)
 
                         if(temp != NULL && temp->isArray)
                         {
-                            printf("ERROR(%d): Cannot use array as test condition in %s statement.\n", t->lineno, t->kind.stmt);
+                            printf("ERROR(%d): Cannot use array as test condition in %s statement.\n", t->lineno, getStmtKind(t->kind.stmt));
                             numErrors++;
                         }
                     }
@@ -673,7 +674,7 @@ ExpType insertNode(TreeNode *t)
                 { /*Do Nothing*/ }
                 else if(c1 != boolean)
                 {
-                    printf("ERROR(%d): Expecting Boolean test condition in %s statement but got %s.\n", t->lineno, t->kind.stmt, types[c1]);
+                    printf("ERROR(%d): Expecting Boolean test condition in %s statement but got %s.\n", t->lineno, getStmtKind(t->kind.stmt), types[c1]);
                     numErrors++;
                 }
 
@@ -686,7 +687,7 @@ ExpType insertNode(TreeNode *t)
 
                         if(temp != NULL && temp->isArray)
                         {
-                            printf("ERROR(%d): Cannot use array as test condition in %s statement.\n", t->lineno, t->kind.stmt);
+                            printf("ERROR(%d): Cannot use array as test condition in %s statement.\n", t->lineno, getStmtKind(t->kind.stmt));
                             numErrors++;
                         }
                     }
@@ -985,5 +986,38 @@ void checkParams(TreeNode *funcNode, TreeNode *callNode, TreeNode *funcParam, Tr
     {
         printf("ERROR(%d): Too few parameters passed for function '%s' declared on line %d.\n", callNode->lineno, funcNode->attr.name, funcNode->lineno);
         numErrors++;
+    }
+}
+
+void getStmtKind(StmtKind t){
+
+    switch(t){
+        case NullK:
+            printf("NullK");
+            break;
+        case IfK:
+            printf("IfK");
+            break;
+        case WhileK:
+            printf("WhileK");
+            break;
+        case ForK:
+            printf("ForK");
+            break;
+        case CompoundK:
+            printf("CompoundK");
+            break;
+        case ReturnK:
+            printf("ReturnK");
+            break;
+        case BreakK:
+            printf("BreakK");
+            break;
+        case RangeK:
+            printf("RangeK");
+            break;        
+        default: 
+            printf("stmtKind not found");
+            break;
     }
 }
