@@ -1,6 +1,6 @@
 %{
 #include "scanType.h" // TokenData Type
-#include "treeNodes.h"
+#include "treeNode.h"
 #include "parser.tab.h"
 
 char *lastToken;

@@ -472,17 +472,19 @@ int main(int argc, char **argv)
     extern int opterr;
     extern int optind;
     extern char *optarg;
+    bool memTyping = false;
     int c; 
     int dflg = 0; 
     int pflg = 0; 
     int filerr = 0; 
     int Pflg = 0;
     int hflg = 0;
+    int Mflg = 0;
     char *oarg = NULL;
     FILE *filename;
 
 
-    while ((c = ourGetopt(argc, argv, (char *)":dpPh")) != EOF)
+    while ((c = ourGetopt(argc, argv, (char *)":dpPhM")) != EOF)
     {
         switch(c)
         {
@@ -495,6 +497,9 @@ int main(int argc, char **argv)
             case 'P':
                 ++Pflg;
                 break;
+            case 'M':
+                ++Mflg;
+                break;
             case 'h':
                 ++hflg;
                 printf("usage: -c  [options] [sourcefile]\n");
@@ -502,9 +507,10 @@ int main(int argc, char **argv)
                 printf("-d              - turn on parser debugging\n");
                 printf("-D              - turn on symbol table debugging\n");
                 printf("-h              - print this usage message\n");
+                printf("-M              - print the abstract syntax tree with memory locations\n");
                 printf("-p              - print the abstract syntax tree\n");
                 printf("-P              - print the abstract syntax tree plus type information\n");   
-                break;        
+                break;    
             case '?':
                 printf("Error\n");
                 exit(1);
@@ -570,9 +576,15 @@ int main(int argc, char **argv)
         if(Pflg) 
         {
           
-            semanticPrintTree(root, 1, 0);
+            semanticPrintTree(root, 1, 0, memTyping);
+        }
+
+        if(Mflg){
+        memTyping = true;
+        semanticPrintTree(root, 1, 0, memTyping);
         }
     }
+
 
     
     printf("Number of warnings: %d\n", numWarns);

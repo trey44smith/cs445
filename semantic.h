@@ -24,7 +24,7 @@ void ioSetup(const char*, ExpType, ExpType);
 
 void checkParams(TreeNode *, TreeNode *, TreeNode *, TreeNode *, int);
 
-std::string getStmtKind(StmtKind t);
+char* getStmtKind(StmtKind t);
 
 //8:13AM version
 

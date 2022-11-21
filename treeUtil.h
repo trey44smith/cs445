@@ -1,7 +1,7 @@
 #ifndef TREE_UTIL_H_
 #define TREE_UTIL_H_
 
-#include "treeNodes.h"
+#include "treeNode.h"
 #include "scanType.h"
 
 treeNode *newExpNode(ExpKind);

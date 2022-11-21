@@ -3,7 +3,7 @@ CC = g++
 OUT = c-
 
 SRCS = $(BIN).y  $(BIN).l
-HDRS = scanType.h treeNodes.h treeUtil.h printTree.h symbolTable.h ourgetopt.h semantic.h yyerror.h
+HDRS = scanType.h treeNode.h treeUtil.h printTree.h symbolTable.h ourgetopt.h semantic.h yyerror.h
 OBJS = lex.yy.o $(BIN).tab.o
 
 $(BIN) : $(OBJS)

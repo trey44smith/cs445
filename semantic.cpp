@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <iostream>
-#include "treeNodes.h"
+#include "treeNode.h"
 #include "symbolTable.h"
 #include "semantic.h"
 
@@ -649,7 +649,7 @@ ExpType insertNode(TreeNode *t)
 
                 }
                 else if(c1 != boolean){
-                    printf("ERROR(%d): Expecting Boolean test condition in %s statement but got %s.\n", t->lineno, getStmtKind(t->kind.stmt).c_str(), types[c1]);
+                    printf("ERROR(%d): Expecting Boolean test condition in %s statement but got %s.\n", t->lineno, getStmtKind(t->kind.stmt), types[c1]);
                     numErrors++;
                 }
 
@@ -662,7 +662,7 @@ ExpType insertNode(TreeNode *t)
 
                         if(temp != NULL && temp->isArray)
                         {
-                            printf("ERROR(%d): Cannot use array as test condition in %s statement.\n", t->lineno, getStmtKind(t->kind.stmt).c_str());
+                            printf("ERROR(%d): Cannot use array as test condition in %s statement.\n", t->lineno, getStmtKind(t->kind.stmt));
                             numErrors++;
                         }
                     }
@@ -676,7 +676,7 @@ ExpType insertNode(TreeNode *t)
                 { /*Do Nothing*/ }
                 else if(c1 != boolean)
                 {
-                    printf("ERROR(%d): Expecting Boolean test condition in %s statement but got %s.\n", t->lineno, getStmtKind(t->kind.stmt).c_str(), types[c1]);
+                    printf("ERROR(%d): Expecting Boolean test condition in %s statement but got %s.\n", t->lineno, getStmtKind(t->kind.stmt), types[c1]);
                     numErrors++;
                 }
 
@@ -689,7 +689,7 @@ ExpType insertNode(TreeNode *t)
 
                         if(temp != NULL && temp->isArray)
                         {
-                            printf("ERROR(%d): Cannot use array as test condition in %s statement.\n", t->lineno, getStmtKind(t->kind.stmt).c_str());
+                            printf("ERROR(%d): Cannot use array as test condition in %s statement.\n", t->lineno, getStmtKind(t->kind.stmt));
                             numErrors++;
                         }
                     }
@@ -991,38 +991,38 @@ void checkParams(TreeNode *funcNode, TreeNode *callNode, TreeNode *funcParam, Tr
     }
 }
 
-std::string getStmtKind(StmtKind t){
+char* getStmtKind(StmtKind t){
 
     switch(t){
        // std::string str;
         case NullK:
             //str = "NullK";
-            std::cout << "NullK"; 
+           return "NullK"; 
             break;
         case IfK:
-            std::cout << "IfK";
+            return "IfK";
             break;
         case WhileK:
-            std::cout << "WhileK";
+            return "WhileK";
             break;
         case ForK:
-            std::cout << "ForK";
+            return "ForK";
             break;
         case CompoundK:
-            std::cout << "CompoundK";
+            return "CompoundK";
             break;
         case ReturnK:
-             std::cout << "ReturnK";
+             return "ReturnK";
             break;
         case BreakK:
-              std::cout << "BreakK";
+              return "BreakK";
             break;
         case RangeK:
-           std::cout << "RangeK";
+           return "RangeK";
             break;        
         default: 
-            printf("stmtKind not found");
+            return "stmtKind not found";
             break;
     }
-    return NULL;
+    //return NULL;
 }
