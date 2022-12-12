@@ -5,6 +5,9 @@
 #include <string>
 #include "yyerror.h"
 
+//extern char *yytext;  // the last token scanned and saved in your token struct or class
+extern char *yytext;
+
 // // // // // // // // // // // // // // // // // // // // 
 //
 // Error message printing
@@ -58,6 +61,8 @@ static void trim(char *s)
     s[strlen(s)-1] = '\0';
 }
 
+
+
 // map from string to char * for storing nice translation of
 // internal names for tokens.  Preserves (char *) used by
 // bison.
@@ -67,40 +72,38 @@ static std::map<std::string , char *> niceTokenNameMap;    // use an ordered map
 // (strings returned as error message) --> (human readable strings)
 //
 void initErrorProcessing() {
-
     niceTokenNameMap["ADDASS"] = (char *)"\"+=\"";
     niceTokenNameMap["AND"] = (char *)"\"and\"";
     niceTokenNameMap["BOOL"] = (char *)"\"bool\"";
     niceTokenNameMap["BOOLCONST"] = (char *)"Boolean constant";
     niceTokenNameMap["BREAK"] = (char *)"\"break\"";
-    niceTokenNameMap["BY"] = (char *)"\"by\"";
     niceTokenNameMap["CHAR"] = (char *)"\"char\"";
     niceTokenNameMap["CHARCONST"] = (char *)"character constant";
-    niceTokenNameMap["CHSIGN"] = (char *)"-";
     niceTokenNameMap["DEC"] = (char *)"\"--\"";
     niceTokenNameMap["DIVASS"] = (char *)"\"/=\"";
     niceTokenNameMap["DO"] = (char *)"\"do\"";
     niceTokenNameMap["ELSE"] = (char *)"\"else\"";
+    niceTokenNameMap["ELSIF"] = (char *)"\"elsif\"";
     niceTokenNameMap["EQ"] = (char *)"\"==\"";
-    niceTokenNameMap["FOR"] = (char *)"\"for\"";
-    niceTokenNameMap["GEQ"] = (char *)"\">=\"";
+    niceTokenNameMap["FOREVER"] = (char *)"\"forever\"";
+    niceTokenNameMap["GRTEQ"] = (char *)"\">=\"";
     niceTokenNameMap["ID"] = (char *)"identifier";
     niceTokenNameMap["IF"] = (char *)"\"if\"";
     niceTokenNameMap["INC"] = (char *)"\"++\"";
     niceTokenNameMap["INT"] = (char *)"\"int\"";
-    niceTokenNameMap["LEQ"] = (char *)"\"<=\"";
+    niceTokenNameMap["LESSEQ"] = (char *)"\"<=\"";
+    niceTokenNameMap["LOOP"] = (char *)"\"loop\"";
     niceTokenNameMap["MULASS"] = (char *)"\"*=\"";
-    niceTokenNameMap["NEQ"] = (char *)"\"!=\"";
     niceTokenNameMap["NOT"] = (char *)"\"not\"";
+    niceTokenNameMap["NOTEQ"] = (char *)"\"!=\"";
     niceTokenNameMap["NUMCONST"] = (char *)"numeric constant";
     niceTokenNameMap["OR"] = (char *)"\"or\"";
+    niceTokenNameMap["RANGE"] = (char *)"\"..\"";
     niceTokenNameMap["RETURN"] = (char *)"\"return\"";
-    niceTokenNameMap["SIZEOF"] = (char *)"\"*\"";
     niceTokenNameMap["STATIC"] = (char *)"\"static\"";
+    niceTokenNameMap["THEN"] = (char *)"\"then\"";
     niceTokenNameMap["STRINGCONST"] = (char *)"string constant";
     niceTokenNameMap["SUBASS"] = (char *)"\"-=\"";
-    niceTokenNameMap["THEN"] = (char *)"\"then\"";
-    niceTokenNameMap["TO"] = (char *)"\"to\"";
     niceTokenNameMap["WHILE"] = (char *)"\"while\"";
     niceTokenNameMap["$end"] = (char *)"end of input";
 }
@@ -149,6 +152,7 @@ static void tinySort(char *base[], int num, int step, bool up)
     }
 }
 
+
 // This is the yyerror called by the bison parser for errors.
 // It only does errors and not warnings.   
 void yyerror(const char *msg)
@@ -156,7 +160,6 @@ void yyerror(const char *msg)
     char *space;
     char *strs[100];
     int numstrs;
-    char cbuf[32];
 
     // make a copy of msg string
     space = strdup(msg);
@@ -173,9 +176,10 @@ void yyerror(const char *msg)
     // print components
     printf("ERROR(%d): Syntax error, unexpected %s", line, strs[3]);
     if (elaborate(strs[3])) {
-        if (lastToken[0]=='\'' || lastToken[0]=='"') printf(" %s", lastToken); 
-        else printf(" \"%s\"", lastToken);
+        if (yytext[0]=='\'' || yytext[0]=='"') printf(" %s", yytext); 
+        else printf(" \"%s\"", yytext);
     }
+
     if (numstrs>4) printf(",");
 
     // print sorted list of expected
@@ -186,8 +190,7 @@ void yyerror(const char *msg)
     printf(".\n");
     fflush(stdout);   // force a dump of the error
 
-    numErrors++;      // count the number of errors
+    numErrors++;
 
     free(space);
 }
-

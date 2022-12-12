@@ -1,30 +1,35 @@
-#ifndef TREENODE_H
-#define TREENODE_H
+#ifndef _TREENODE_H_
+#define _TREENODE_H_
 
+typedef int OpKind;  
 
-typedef int OpKind;
-enum NodeKind {DeclK, StmtK, ExpK};
-enum DeclKind {VarK, FuncK, ParamK};
-enum StmtKind {NullK, IfK, WhileK, ForK, CompoundK, ReturnK, BreakK, RangeK};
-enum ExpKind {OpK, ConstantK, IdK, AssignK, InitK, CallK};
-enum ExpType {Void, Integer, boolean, Char, Equal, UndefinedType};
-enum VarKind {None, Local, Global, Parameter, LocalStatic};
+typedef enum {DeclK, StmtK, ExpK} NodeKind;
 
-const int MAXCHILDREN = 3;
+typedef enum {VarK, FuncK, ParamK} DeclKind;
 
+typedef enum {NullK, ElsifK, IfK, WhileK, LoopK, LoopForeverK, CompoundK, RangeK, ReturnK, BreakK} StmtKind;
+
+typedef enum {OpK, ConstantK, IdK, AssignK, InitK, CallK} ExpKind;
+
+typedef enum {Void, Integer, Boolean, Char, CharInt, Equal, UndefinedType, Error} ExpType;
+
+typedef enum {None, Local, Global, Parameter, LocalStatic} VarKind;
+
+#define MAXCHILDREN 3 
+
+/* 
+* descr: Struct to store data for the treeNode
+*/
 typedef struct treeNode
 {
     struct treeNode *child[MAXCHILDREN];   
     struct treeNode *sibling;            
 
     int lineno;                          
-    NodeKind nodekind;   
+    NodeKind nodekind; 
+    ExpType expType;  
     VarKind var;
-    OpKind op;     
-   //TokenData *tokenData;  
-    //char *tokenstr;   
-    //int linenum;   
-
+    OpKind op;                
     union                               
     {
 	    DeclKind decl;                    
@@ -33,36 +38,35 @@ typedef struct treeNode
     } kind;
     
     union                                 
-    {               
-        OpKind op;          
+    {                         
 	    int value;                        
-        char *cvalue;           
+        unsigned char cvalue;           
 	    char *string;                     
-	    char *name;                        
-    } attr;  
+	    const char *name;                        
+    } attr;     
+		      
+    bool isArray;           //Array flag                        
+    bool isStatic;          //Static flag
+    bool enteredScope;      //Scope flag for compound scope
+    bool isInit;            //Initialization flag 
+    bool isUsed;            //Use flag
+    bool isChecked;         //Check flag for children
+    bool isIndexed;         //Index flag for arrays
+    bool isFlagged;         //Warning flag for checking if warning has already been flagged    
 
-    ExpType expType;		      
-    bool isArray;                          
-    bool isStatic;    
-    bool isChild;
-    bool isChecked;
-    bool isInit;
-    //bool isIO;
-    bool isUsed;
-    bool isFlagged;
-    bool isIndexed;
-    bool enteredScope;
-    bool isExp;
-
+    int size;
+    int offset;      
 
 } TreeNode;
 
+/* 
+* descr: Struct to store data for var or param types
+*/
 typedef struct varData 
 {
     int linenum;
     ExpType expType;
     bool isStatic; 
 } VarData;
-
 
 #endif

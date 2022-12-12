@@ -1,28 +1,33 @@
-%{
+%{ 
 #include <stdio.h>
+#include <stdlib.h>
+#include <strings.h>
 #include <cstring>
-#include <stdbool.h>
-#include <iostream>
-#include "scanType.h" // TokenData type
-#include "treeUtil.h"
-#include "printTree.h"
-#include "ourgetopt.h"
+#include "treeUtils.h"
+#include "scantype.h"
+#include "printtree.h"
+#include "ourGetopt.h"
 #include "semantic.h"
 #include "yyerror.h"
-#include "symbolTable.h"
+#include "codeGen.h"
 
-double vars[26];
+#define YYERROR_VERBOSE
+
+int numErrors, numWarnings;
 
 extern int yylex();
 extern int yyparse();
-//extern int yylineno;
 extern FILE *yyin;
-//int numErrors;
-int numWarns;
+FILE *code;
+extern int Goffset;
 
-
-
-/*void addSibling(TreeNode *t1, TreeNode *t2)
+/* descr: Recursively add sibling to end of the list
+*
+* param: TreeNode -> Pointer to the node to add the sibling
+* param: TreeNode -> Pointer to the sibling node
+* return: void
+*/
+void addSibling(TreeNode *t1, TreeNode *t2)
 {
     if(t1 != NULL) 
     {
@@ -35,29 +40,19 @@ int numWarns;
             addSibling(t1->sibling, t2);
         }
     }
-    else
-    {  printf("error2\n");
-     //addSibling(t1->sibling, t2); 
-     }
-}*/
-
-TreeNode *addSibling(TreeNode *t, TreeNode *s)
-{
-    if (s==NULL && numErrors==0) {
-        printf("ERROR(SYSTEM): never add a NULL to a sibling list.\n");
-        exit(1);
-    }
-    if (t!=NULL) { 
-        TreeNode *tmp;
-
-        tmp = t;
-        while (tmp->sibling!=NULL) tmp = tmp->sibling;
-        tmp->sibling = s; 
-        return t;
-    }
-    return s;
+    // else
+    // { printf("error\n"); }
 }
 
+/* descr: Recursively add the type for a var or param kind. This is 
+* done by adding the unidentified type to the id assignment for 
+* param or var, then checking for it here to tell whether it needs 
+* to be changed.
+*
+* param: VarData -> Struct that contains the type and static data
+* param: TreeNode -> Pointer to the param or var node to change
+* return: void
+*/
 void setType(VarData v, TreeNode *t1)
 {
     if(t1 != NULL)
@@ -74,228 +69,591 @@ void setType(VarData v, TreeNode *t1)
     }
 }
 
-TreeNode* root;
+TreeNode * savedTree;
 
 %}
 
-%union{
-    VarData vardata;
+%union 
+{
+    VarData vardata; 
     TokenData *tokenData;
     TreeNode *tree;
 }
 
-%token <tokenData> ID BOOLCONST NUMCONST CHARCONST STRINGCONST BOOL CHAR
-%token <tokenData> STATIC IF ASGN ADD SUB MUL DIV MOD EQ
-%token <tokenData> COMMA LT GT LEQ GEQ NEQ ADDASS SUBASS DIVASS MULASS ELSE THEN RETURN
-%token <tokenData> OPENPAREN CLOSEPAREN OPENBRACKET CLOSEBRACKET OPENCURL CLOSECURL ';' COLON
-%token <tokenData> INT QUESTION DEC INC TO DO BREAK BY AND OR NOT WHILE FOR
 
-%type <vardata> typeSpec
-%type <tokenData> unaryop mulop sumop relop
+/*******************
+* TERMINALS        *
+*******************/
 
-%type <tree>  declList decl varDecl funDecl scopedVarDecl varDeclList varDeclInit varDeclId
-%type <tree> parms parmList parmTypeList parmIdList parmId
-%type <tree> stmt expStmt compoundStmt localDecls stmtList selectStmt iterStmt iterRange returnStmt breakStmt
-%type <tree> exp assignop simpleExp andExp unaryRelExp relExp sumExp mulExp unaryExp
-%type <tree> factor mutable immutable call args argList constant matched unmatched
+/* CONSTANTS */
+%token <tokenData> NUMCONST 
+%token <tokenData> CHARCONST 
+%token <tokenData> STRINGCONST  
+%token <tokenData> BOOLCONST
 
-%define parse.error verbose
+/* ID */
+%token <tokenData> ID
 
+/* OPERATORS */
+%token <tokenData> '>' 
+%token <tokenData> '<' 
+%token <tokenData> '+' 
+%token <tokenData> '-' 
+%token <tokenData> '*' 
+%token <tokenData> '/' 
+%token <tokenData> '?' 
+%token <tokenData> '%'
+%token <tokenData> RANGE
+%token <tokenData> ADDASS
+%token <tokenData> SUBASS
+%token <tokenData> MULASS
+%token <tokenData> DIVASS
+%token <tokenData> INC
+%token <tokenData> DEC
+%token <tokenData> LESSEQ
+%token <tokenData> GRTEQ
+%token <tokenData> EQ
+%token <tokenData> NOTEQ
+%token <tokenData> '='
+%token <tokenData> OR
+%token <tokenData> AND
+%token <tokenData> NOT
+
+/* TYPE */
+%token <tokenData> STATIC 
+%token <tokenData> INT
+%token <tokenData> BOOL
+%token <tokenData> CHAR
+
+/* STATEMENTS */
+%token <tokenData> ELSIF
+%token <tokenData> THEN
+%token <tokenData> IF
+%token <tokenData> ELSE
+%token <tokenData> WHILE
+%token <tokenData> DO
+%token <tokenData> FOREVER
+%token <tokenData> LOOP
+%token <tokenData> RETURN
+%token <tokenData> BREAK
+
+/* PUNCTUATION */
+// %token <tokenData> SEMI
+%token <tokenData> ';'
+%token <tokenData> ','
+%token <tokenData> '['
+%token <tokenData> ']'
+%token <tokenData> ':'
+%token <tokenData> '('
+%token <tokenData> ')'
+%token <tokenData> '{'
+%token <tokenData> '}' 
+
+/* UNSURE */
+%token INVALIDCHAR 
+
+/*******************
+* NONTERMINALS     *
+*******************/
+
+/* VARDATA */
+%type <vardata> typeSpecifier
+%type <vardata> scopedTypeSpecifier
+
+/* TOKENDATA */
+%type <tokenData> assignop
+%type <tokenData> unaryop
+%type <tokenData> mulop
+%type <tokenData> sumop
+%type <tokenData> relop
+
+/* TREE */
+
+%type <tree> constant
+%type <tree> iterationId
+
+%type <tree> argList                
+%type <tree> args
+%type <tree> call 
+%type <tree> immutable
+%type <tree> mutable
+%type <tree> factor
+
+%type <tree> unaryExpression
+%type <tree> mulExpression
+%type <tree> sumExpression
+%type <tree> relExpression
+%type <tree> unaryRelExpression
+%type <tree> andExpression
+%type <tree> simpleExpression
+%type <tree> expression
+
+%type <tree> breakStmt
+%type <tree> returnStmt
+%type <tree> statementList
+%type <tree> localDeclarations
+%type <tree> compoundStmt
+%type <tree> expressionStmt
+%type <tree> other_statements
+%type <tree> unmatched
+%type <tree> matched
+%type <tree> iterationRange
+%type <tree> unmatchedelsif
+%type <tree> matchedelsif
+%type <tree> statement
+
+%type <tree> paramId
+%type <tree> paramTypeList
+%type <tree> paramIdList
+%type <tree> paramList
+%type <tree> params
+
+%type <tree> funDeclaration
+
+%type <tree> varDeclId
+%type <tree> varDeclInitialize
+%type <tree> varDeclList
+%type <tree> scopedVarDeclaration
+%type <tree> varDeclaration
+%type <tree> declaration
+%type <tree> declarationList
+ 
 %%
+program                 : declarationList
+                            { savedTree = $1; }
+                        ;
 
-/*
-tokenlist : token tokenlist
-          | token
-          ;
-
-  token     : ID          {printf("Line %d Token: ID Value: %s\n", $1->linenum, $1->svalue);}
-            | BOOLCONST   {printf("Line %d Token: BOOLCONST Value: %d  Input: %s\n", $1->linenum, $1->nvalue, $1->svalue);}
-            | NUMCONST    {printf("Line %d Token: NUMCONST Value: %d  Input: %d\n", $1->linenum, $1->nvalue, $1->nvalue);}
-            | CHARCONST   {printf("Line %d Token: CHARCONST Value: %s  Input: %s\n", $1->linenum, $1->cvalue, $1->cvalue);}
-            | STRINGCONST {printf("Line %d Token: STRINGCONST Value: %s  Len: %d  Input: %s\n", $1->linenum, $1->svalue, $1->nvalue, $1->svalue);}
-            | BOOL        {printf("Line %d Token: BOOL\n", $1->linenum, $1->svalue);}
-            | CHAR        {printf("Line %d Token: CHAR\n", $1->linenum, $1->svalue);}
-            | STATIC      {printf("Line %d Token: STATIC\n", $1->linenum, $1->svalue);}
-            | IF          {printf("Line %d Token: IF\n", $1->linenum, $1->svalue);}
-            | ASGN        {printf("Line %d Token: =\n", $1->linenum, $1->svalue);}
-            | ADD         {printf("Line %d Token: +\n", $1->linenum, $1->svalue);}
-            | SUB         {printf("Line %d Token: -\n", $1->linenum, $1->svalue);}
-            | MUL         {printf("Line %d Token: *\n", $1->linenum, $1->svalue);}
-            | DIV         {printf("Line %d Token: /\n", $1->linenum, $1->svalue);}
-            | MOD         {printf("Line %d Token: %%\n", $1->linenum, $1->svalue);}
-            | EQ          {printf("Line %d Token: EQ\n", $1->linenum, $1->svalue);}
-            | COMMA       {printf("Line %d Token: ,\n", $1->linenum, $1->svalue);}
-            | LT          {printf("Line %d Token: <\n", $1->linenum, $1->svalue);}
-            | GT          {printf("Line %d Token: >\n", $1->linenum, $1->svalue);}
-            | LEQ         {printf("Line %d Token: LEQ\n", $1->linenum, $1->svalue);}
-            | GEQ         {printf("Line %d Token: GEQ\n", $1->linenum, $1->svalue);}
-            | NEQ         {printf("Line %d Token: NEQ\n", $1->linenum, $1->svalue);}
-            | ADDASS      {printf("Line %d Token: ADDASS\n", $1->linenum, $1->svalue);}
-            | SUBASS      {printf("Line %d Token: SUBASS\n", $1->linenum, $1->svalue);}
-            | DIVASS      {printf("Line %d Token: DIVASS\n", $1->linenum, $1->svalue);}
-            | MULASS      {printf("Line %d Token: MULASS\n", $1->linenum, $1->svalue);}
-            | ELSE        {printf("Line %d Token: ELSE\n", $1->linenum, $1->svalue);}
-            | THEN        {printf("Line %d Token: THEN\n", $1->linenum, $1->svalue);}
-            | RETURN      {printf("Line %d Token: RETURN\n", $1->linenum, $1->svalue);}
-            | OPENPAREN   {printf("Line %d Token: (\n", $1->linenum, $1->svalue);}
-            | CLOSEPAREN  {printf("Line %d Token: )\n", $1->linenum, $1->svalue);}
-            | OPENBRACKET  {printf("Line %d Token: [\n", $1->linenum, $1->svalue);}
-            | CLOSEBRACKET  {printf("Line %d Token: ]\n", $1->linenum, $1->svalue);}
-            | OPENCURL      {printf("Line %d Token: \{\n", $1->linenum, $1->svalue);}
-            | CLOSECURL     {printf("Line %d Token: }\n", $1->linenum, $1->svalue);}
-            | ';'     {printf("Line %d Token: ;\n", $1->linenum, $1->svalue);}
-            | COLON         {printf("Line %d Token: :\n", $1->linenum, $1->svalue);}
-            | INT           {printf("Line %d Token: INT\n", $1->linenum, $1->svalue);}
-            | QUESTION      {printf("Line %d Token: ?\n", $1->linenum, $1->svalue);}
-            | DEC           {printf("Line %d Token: DEC\n", $1->linenum, $1->svalue);}
-            | INC         {printf("Line %d Token: INC\n", $1->linenum, $1->svalue);}
-            | TO          {printf("Line %d Token: TO\n", $1->linenum, $1->svalue);}
-            | DO          {printf("Line %d Token: DO\n", $1->linenum, $1->svalue);}
-            | BREAK       {printf("Line %d Token: BREAK\n", $1->linenum, $1->svalue);}
-            | BY          {printf("Line %d Token: BY\n", $1->linenum, $1->svalue);}
-            | AND         {printf("Line %d Token: AND\n", $1->linenum, $1->svalue);}
-            | OR          {printf("Line %d Token: OR\n", $1->linenum, $1->svalue);}
-            | NOT         {printf("Line %d Token: NOT\n", $1->linenum, $1->svalue);}
-            | WHILE       {printf("Line %d Token: WHILE\n", $1->linenum, $1->svalue);}
-            | FOR         {printf("Line %d Token: FOR\n", $1->linenum, $1->svalue);}
-            ; */
-
-program : declList {root = $1;}
-        ;
-
-declList : declList decl {if($1 == NULL){$$=$2;}else{addSibling($1, $2); $$ = $1;}}
-         | decl
-         ;
-
-decl     : varDecl
-         | funDecl
-         | error {$$ = NULL;}
-         ;
-
-varDecl  : typeSpec varDeclList ';' {setType($1, $2); $$=$2; yyerrok;}
-         | error varDeclList ';' {$$ = NULL; yyerrok;}
-         | typeSpec error ';' {$$ = NULL; yyerrok;}
-         ;
-
-scopedVarDecl : STATIC typeSpec varDeclList ';'  {setType($2, $3);$$ = $3; $$->isArray = true; yyerrok;} //handle the static
-              | typeSpec varDeclList ';' {setType($1, $2); $$=$2; yyerrok;}
-              ;
-
-varDeclList : varDeclList COMMA varDeclInit {
-                                        if($1 == NULL)
-                                                {$$ = $3;}
-                                        else
-                                        {addSibling($1, $3);$$ = $1;
-                                        }
-                                        yyerrok;}
-            | varDeclInit
-            | varDeclList COMMA error {$$ = NULL;} 
-            | error {$$ = NULL;}
-            ;
-
-varDeclInit : varDeclId
-            | varDeclId COLON simpleExp {$$ = $1;$$->child[0] = $3;}
-            | error COLON simpleExp {$$ = NULL; yyerrok;}
-            ;
-
-varDeclId : ID  {$$ = newDeclNode(VarK);$$->lineno = $1->linenum; $$->attr.name = $1->tokenstr;$$->expType = UndefinedType;}
-          | ID OPENBRACKET NUMCONST CLOSEBRACKET {$$ = newDeclNode(VarK);$$->lineno = $1->linenum; $$->attr.name = $1->tokenstr;$$->isArray = true;$$->expType = UndefinedType;}
-          | ID OPENBRACKET error {$$ = NULL;}
-          | error CLOSEBRACKET {$$ = NULL; yyerrok;}
-          ;
-
-typeSpec : BOOL {$$.linenum = $1->linenum;$$.expType = boolean;}
-         | CHAR {$$.linenum = $1->linenum;$$.expType = Char;}
-         | INT  {$$.linenum = $1->linenum;$$.expType = Integer;}
-         ;
-
-funDecl : typeSpec ID OPENPAREN parms CLOSEPAREN compoundStmt {$$ = newDeclNode(FuncK);$$->child[0] = $4;$$->child[1] = $6;$$->expType = $1.expType; $$->attr.name = $2->tokenstr;$$->lineno = $1.linenum;}
-        | ID OPENPAREN parms CLOSEPAREN compoundStmt {$$ = newDeclNode(FuncK);$$->child[0] = $3;$$->child[1] = $5;$$->attr.name = $1->tokenstr;$$->expType = UndefinedType;$1 -> linenum;$$->lineno = $1->linenum;}
-        | typeSpec error {$$ = NULL;}
-        | typeSpec ID OPENPAREN error {$$ = NULL;}
-        | ID OPENPAREN error {$$ = NULL;}
-        | ID OPENPAREN parms CLOSEPAREN error {$$ = NULL;}
-        ;
-
-parms : parmList  
-      | { $$ = NULL; }
-      ;
-
-parmList : parmList ';' parmTypeList {
-                                if($1 == NULL)
-                                {
-                                    $$ = $3;
-                                }
-                                else
-                                {
-                                    $$ = $1;
-                                    addSibling($1, $3);
-                                }
+declarationList         : declarationList declaration
+                            {
+                                addSibling($1, $2);
+                                $$ = $1;
                             }
-         | parmTypeList
-         | parmList ';' error {$$ = NULL;}
-         | error {$$ = NULL;}
-         ;
+                        | declaration
+                            { $$ = $1; }
+                        ;
 
-parmTypeList : typeSpec parmIdList {setType($1, $2);$$ = $2;}
-             | typeSpec error {$$ = NULL;}
-             ;
+declaration             : varDeclaration
+                            { $$ = $1; }
+                        | funDeclaration
+                            { $$ = $1; }
+                        | error
+                            { $$ = NULL; }
+                        ;
 
-parmIdList : parmIdList COMMA parmId {
-                                if($1 == NULL)
-                                {
-                                    $$ = $3;
-                                }
-                                else
-                                {
-                                    addSibling($1, $3);
-                                    $$ = $1;
-                                }
+varDeclaration          : typeSpecifier varDeclList ';'
+                            {
+                                yyerrok;
+                                setType($1, $2);
+                                $$ = $2;
                             }
-           | parmId
-           | parmIdList COMMA parmId {$$ = addSibling($1, $3); $$ = NULL;}
-           | parmIdList COMMA error {$$ = NULL;}
-           | error {$$ = NULL;}
-           ;
+                        | error varDeclList ';'                
+                            { $$ = NULL; }
+                        | typeSpecifier error ';'                   
+                            { yyerrok; $$ = NULL; }
+                        ;
 
-parmId : ID {$$ = newDeclNode(ParamK); $$->attr.name = $1->tokenstr;$$->lineno = $1->linenum;$$->expType = UndefinedType;}
-       | ID OPENBRACKET CLOSEBRACKET {$$ = newDeclNode(ParamK);$$->attr.name = $1->tokenstr;$$->isArray = true;$$->lineno = $1->linenum;$$->expType = UndefinedType;}
-       ;
+scopedVarDeclaration    : scopedTypeSpecifier varDeclList ';'
+                            {
+                                yyerrok;
+                                setType($1, $2);
+                                $$ = $2;
+                            }
+                        | scopedTypeSpecifier error ';'                   
+                            { yyerrok; $$ = NULL; }
+                        | error varDeclList ';'                
+                            { yyerrok; $$ = NULL; }
+                        ;
 
-stmt : expStmt
-     | compoundStmt
-     | selectStmt
-     | iterStmt
-     | returnStmt
-     | breakStmt
-     ;
+varDeclList             : varDeclList ',' varDeclInitialize
+                            {
+                                yyerrok;
+                                addSibling($1, $3);
+                                $$ = $1;
+                            }
+                        | varDeclInitialize
+                            { $$ = $1; }
+                        | varDeclList ',' error                
+                            { $$ = NULL; }
+                        | error                                
+                            { $$ = NULL; }
+                        ;
 
-matched : IF error {$$ = NULL;}
-        | IF error ELSE matched {$$ = NULL; yyerrok;}
-        | IF error THEN matched ELSE matched {$$ = NULL; yyerrok;}
-        | WHILE error DO matched {$$ = NULL; yyerrok;}
-        | WHILE error {$$ = NULL;}
-        | FOR ID ASGN error DO matched{$$ = NULL; yyerrok;}
-        | FOR error {$$ = NULL;}
-        ;
+varDeclInitialize       : varDeclId
+                            { $$ = $1; }
+                        | varDeclId ':' simpleExpression
+                            {
+                                $$ = $1;
+                                $$->child[0] = $3;
+                            }
+                        | error ':' simpleExpression                  
+                            { yyerrok; $$ = NULL; }
+                        | varDeclId ':' error                  
+                            { $$ = NULL; }
+                        ;
 
-stmtList : stmtList stmt {if($1==NULL)
-                                {$$ = $2;}
-                        else{addSibling($1,$2); 
-                                $$=$1;}
-                                }
-         | {$$=NULL;}
-         ;
+varDeclId               : ID 
+                            {
+                                $$ = newDeclNode(VarK);
+                                $$->lineno = $1->linenum;
+                                $$->attr.name = $1->tokenstr;
+                                $$->expType = UndefinedType;
+                            }
+                        | ID '[' NUMCONST ']'
+                            {
+                                $$ = newDeclNode(VarK);
+                                $$->lineno = $1->linenum;
+                                $$->attr.name = $1->tokenstr;
+                                $$->isArray = true;
+                                $$->size = $3->numValue;
+                                $$->expType = UndefinedType;
+                            }
+                        | ID '[' error                         
+                            { $$ = NULL; }
+                        | error ']'                            
+                            { yyerrok; $$ = NULL; }
+                        ;
 
-expStmt : exp ';' {$$ = $1;}
-        | ';' {$$=NULL;}
-        | error ';' {$$ = NULL; yyerrok;}
-        ;
+scopedTypeSpecifier     : STATIC typeSpecifier
+                            {
+                                $$ = $2;
+                                $$.isStatic = true;
+                            }
+                        | typeSpecifier
+                            { $$ = $1; }
+                        ;
 
-compoundStmt : OPENCURL localDecls stmtList CLOSECURL {$$ = newStmtNode(CompoundK);$$->child[0] = $2;$$->child[1] = $3;$$->lineno = $1->linenum; yyerrok;}
-             ;
+typeSpecifier           : INT
+                            {
+                                $$.linenum = $1->linenum;
+                                $$.expType = Integer;
+                            }
+                        | BOOL 
+                            {
+                                $$.linenum = $1->linenum;
+                                $$.expType = Boolean;
+                            }
+                        | CHAR 
+                            {
+                                $$.linenum = $1->linenum;
+                                $$.expType = Char;
+                            }
+                        ;
 
-localDecls : localDecls scopedVarDecl {
+funDeclaration          : typeSpecifier ID '(' params ')' statement
+                            {
+                                $$ = newDeclNode(FuncK);
+                                $$->child[0] = $4;
+                                $$->child[1] = $6;
+                                $$->expType = $1.expType;
+                                $$->attr.name = $2->tokenstr;
+                                //$$->lineno = $1.linenum;
+                                $$->lineno = $2->linenum;
+                            }
+                        | ID '(' params ')' statement
+                            {
+                                $$ = newDeclNode(FuncK);
+                                $$->child[0] = $3;
+                                $$->child[1] = $5;
+                                $$->attr.name = $1->tokenstr;
+                                $$->expType = Void;
+                                $$->lineno = $1->linenum;
+                            }
+                        | typeSpecifier error                       
+                            { $$ = NULL;}
+                        | typeSpecifier ID '(' error                
+                            { $$ = NULL;}
+                        | typeSpecifier ID '(' params ')' error     
+                            { $$ = NULL;}
+                        | ID '(' error                         
+                            { $$ = NULL;}
+                        | ID '(' params ')' error              
+                            { $$ = NULL;}
+                        ;
+
+/**** EPSILON ****/
+params                  : paramList
+                            { $$ = $1; }
+                        | /* epsilon */
+                            { $$ = NULL; }
+                        ;
+
+paramList               : paramList ';' paramTypeList
+                            {
+                                yyerrok;
+                                $$ = $1;
+                                addSibling($1, $3);
+                            }
+                        | paramTypeList
+                            { $$ = $1; }
+                        | paramList ';' error                  
+                            { $$ = NULL; }
+                        | error                                
+                            { $$ = NULL; }
+                        ;
+
+paramTypeList           : typeSpecifier paramIdList
+                            {
+                                setType($1, $2);
+                                $$ = $2;
+                            }
+                        | typeSpecifier error                       
+                            { $$ = NULL; }
+                        ;
+
+paramIdList             : paramIdList ',' paramId 
+                            {
+                                yyerrok;
+                                addSibling($1, $3);
+                                $$ = $1;
+                            }
+                        | paramId
+                            { $$ = $1; }
+                        | paramIdList ',' error                
+                            { $$ = NULL; }
+                        | error                                
+                            { $$ = NULL; } 
+                        ;
+
+paramId                 : ID
+                            {
+                                $$ = newDeclNode(ParamK);
+                                $$->attr.name = $1->tokenstr;
+                                $$->lineno = $1->linenum;
+                                $$->expType = UndefinedType;
+                            }
+                        | ID '[' ']'
+                            {
+                                $$ = newDeclNode(ParamK);
+                                $$->attr.name = $1->tokenstr;
+                                $$->isArray = true;
+                                $$->lineno = $1->linenum;
+                                $$->expType = UndefinedType;
+                            }
+                        | error ']' 
+                            {yyerrok; $$ = NULL; }
+                        ;
+
+statement               : matched
+                            { $$ = $1; }
+                        | unmatched
+                            { $$ = $1; }
+                        ;
+
+matchedelsif            : ELSIF simpleExpression THEN matched matchedelsif
+                            {
+                                $$ = newStmtNode(ElsifK);
+                                $$->child[0] = $2;
+                                $$->child[1] = $4;
+                                $$->child[2] = $5;
+                                $$->lineno = $1->linenum;
+                            }
+                        | ELSE matched
+                            { $$ = $2; }
+                        | ELSIF error                          
+                            { $$ = NULL; }
+                        ;
+
+/**** EPSILON ****/
+unmatchedelsif          : ELSIF simpleExpression THEN matched unmatchedelsif
+                            {
+                                $$ = newStmtNode(ElsifK);
+                                $$->child[0] = $2;
+                                $$->child[1] = $4;
+                                $$->child[2] = $5;
+                                $$->lineno = $1->linenum;
+                            }
+                        | ELSE unmatched
+                            { $$ = $2; }
+                        | /*epsilon*/
+                            { $$ = NULL; }
+                        | ELSIF error                          
+                            { $$ = NULL; }
+                        ;
+
+/**** QUESTION ****/
+iterationRange          : simpleExpression RANGE simpleExpression
+                            {
+                                $$ = newStmtNode(RangeK);
+                                $$->child[0] = $1;
+                                $$->child[1] = $3;
+                                $$->op = 1;
+
+                                //Solution for Exp node that appears in test cases - Ask why it's there
+                                TreeNode *t = newExpNode(ConstantK);
+                                t->attr.value = 1;
+                                t->attr.name = "1";
+                                t->expType = Integer;
+                                t->lineno = $2->linenum;
+
+                                $$->child[2] = t;
+                                $$->lineno = $1->lineno;
+                            }
+                        | simpleExpression RANGE simpleExpression ':' simpleExpression
+                            { 
+                                $$ = newStmtNode(RangeK);
+                                $$->child[0] = $1;
+                                $$->child[1] = $3;
+                                $$->child[2] = $5;
+                                $$->op = 2;
+                                $$->lineno = $1->lineno;
+                            }
+                        | simpleExpression RANGE simpleExpression ':' error  
+                            { $$ = NULL; }
+                        | simpleExpression RANGE error                
+                            { $$ = NULL; }
+                        ;
+
+iterationId             : ID    
+                            { 
+                                //$$ = newExpNode(IdK); 
+                                $$ = newDeclNode(VarK);
+                                $$->attr.name = $1->tokenstr;
+                                $$->expType = Integer;
+                                $$->lineno = $1->linenum;
+                            }
+                        ;
+
+/**** QUESTION ****/
+matched                 : IF simpleExpression THEN matched matchedelsif
+                            {
+                                $$ = newStmtNode(IfK);
+                                $$->child[0] = $2;
+                                $$->child[1] = $4;
+                                $$->child[2] = $5;
+                                $$->lineno = $1->linenum;
+                            }
+                        | WHILE simpleExpression DO matched
+                            {
+                                $$ = newStmtNode(WhileK);
+                                $$->child[0] = $2;
+                                $$->child[1] = $4;
+                                $$->lineno = $1->linenum;
+                            }
+                        | LOOP FOREVER matched
+                            {
+                                $$ = newStmtNode(LoopForeverK);
+                                $$->child[1] = $3;                  //Why is the child 1 and not 0 in tests?
+                                $$->lineno = $1->linenum;
+                            }
+                        | LOOP iterationId '=' iterationRange DO matched
+                            {
+                                $$ = newStmtNode(LoopK);
+                                $$->child[0] = $2;
+                                $$->child[1] = $4;
+                                $$->child[2] = $6;
+                                $$->lineno = $1->linenum;
+                            }
+                        | other_statements
+                            { $$ = $1; }
+                        | IF error                             
+                            { $$ = NULL;}
+                        | IF error THEN matched ELSE matched matchedelsif  
+                            { yyerrok; $$ = NULL; }
+                        | WHILE error DO matched               
+                            { yyerrok; $$ = NULL; }
+                        | WHILE error                          
+                            { $$ = NULL;}
+                        | LOOP iterationId '=' error DO matched         
+                            { yyerrok; $$ = NULL; }
+                        | LOOP iterationId '=' error                    
+                            { $$ = NULL; }
+                        | LOOP iterationId error                            
+                            { $$ = NULL; }
+                        | LOOP FOREVER error                   
+                            { $$ = NULL; }
+                        | LOOP error                           
+                            { $$ = NULL; }
+                        | error                                
+                            { $$ = NULL; }
+                        ;
+
+/**** QUESTION ****/
+unmatched               : IF simpleExpression THEN unmatched 
+                            {
+                                $$ = newStmtNode(IfK);
+                                $$->child[0] = $2;
+                                $$->child[1] = $4;
+                                $$->lineno = $1->linenum;
+                            }
+                        | IF simpleExpression THEN matched unmatchedelsif
+                            {
+                                $$ = newStmtNode(IfK);
+                                $$->child[0] = $2;
+                                $$->child[1] = $4;
+                                $$->child[2] = $5;
+                                $$->lineno = $1->linenum;
+                            }
+                        | WHILE simpleExpression DO unmatched
+                            {
+                                $$ = newStmtNode(WhileK);
+                                $$->child[0] = $2;
+                                $$->child[1] = $4;
+                                $$->lineno = $1->linenum;
+                            }
+                        | LOOP FOREVER unmatched
+                            {
+                                $$ = newStmtNode(LoopForeverK);
+                                $$->child[1] = $3;                  //Why is the child 1 and not 0 in tests?
+                                $$->lineno = $1->linenum;
+                            }
+                        | LOOP iterationId '=' iterationRange DO unmatched
+                            {
+                                $$ = newStmtNode(LoopK);
+                                $$->child[0] = $2;
+                                $$->child[1] = $4;
+                                $$->child[2] = $6;
+                                $$->lineno = $1->linenum;
+                            }
+                        | IF error THEN unmatched              
+                            { yyerrok; $$ = NULL; }
+                        | IF error THEN matched unmatchedelsif
+                            { yyerrok; $$ = NULL; }
+                        | WHILE error DO unmatched             
+                            { yyerrok; $$ = NULL; }
+                        | LOOP iterationId '=' error DO unmatched       
+                            { yyerrok; $$ = NULL; }
+                        ;
+
+other_statements        : expressionStmt
+                            { $$ = $1; }
+                        | compoundStmt
+                            { $$ = $1; }
+                        | returnStmt
+                            { $$ = $1; }
+                        | breakStmt
+                            { $$ = $1; }
+                        ;
+
+expressionStmt          : expression ';'
+                            { 
+                                yyerrok;
+                                $$ = $1;
+                            }
+                        | ';'
+                            {  
+                                yyerrok;
+                                $$ = NULL;
+                            }
+                        ;
+
+compoundStmt            : '{' localDeclarations statementList '}'
+                            {
+                                yyerrok;
+                                $$ = newStmtNode(CompoundK);
+                                $$->child[0] = $2;
+                                $$->child[1] = $3;
+                                $$->lineno = $1->linenum;
+                            }
+                        | '{' error statementList '}'          
+                            { yyerrok; $$ = NULL; }
+                        | '{' localDeclarations error '}'             
+                            { yyerrok; $$ = NULL; }
+ 
+                        ;
+
+/**** EPSILON ****/
+localDeclarations       : localDeclarations scopedVarDeclaration
+                            {
                                 if($1 == NULL)
                                 {
                                     $$ = $2;
@@ -306,183 +664,360 @@ localDecls : localDecls scopedVarDecl {
                                     $$ = $1;
                                 }
                             }
-           | {$$ = NULL;}
-           ;
+                        | /* epsilon */
+                            { $$ = NULL; }
+                        ;
 
-selectStmt : IF simpleExp THEN stmt {$$ = newStmtNode(IfK); $$->child[0] = $2; $$->child[1] = $4; $$->lineno = $1->linenum;}
-           | IF simpleExp THEN stmt ELSE stmt {$$= newStmtNode(IfK); $$->child[0] = $2; $$->child[1] = $4; $$->child[2] = $6; $$->lineno = $1->linenum;}
-           ;
+/**** EPSILON ****/
+statementList           : statementList statement
+                            {
+                                if($1 == NULL)
+                                {
+                                    $$ = $2;
+                                }
+                                else
+                                {
+                                    addSibling($1, $2);
+                                    $$ = $1;
+                                }
+                            }
+                        | /* epsilon */
+                            { $$ = NULL; } 
+                        ;
 
-iterStmt : WHILE simpleExp DO stmt {$$ = newStmtNode(WhileK); $$->child[0] = $2; $$->child[1] = $4; $$->lineno = $1->linenum;}  
-         | FOR ID ASGN iterRange DO stmt {$$ = newStmtNode(ForK); $$->lineno = $2->linenum;
-                                        treeNode *id = newExpNode(IdK); id->attr.name = $2->tokenstr; id->lineno = $2->linenum; $$->attr.name = $2->name;
-                                        $$->child[0] = id; 
-                                        $$->child[1] = $4; 
-                                        $$->child[2] = $6; } // lil bit of a doozy
-         ;
+returnStmt              : RETURN ';'
+                            {
+                                yyerrok;
+                                $$ = newStmtNode(ReturnK);
+                                $$->lineno = $1->linenum;
+                            }
+                        | RETURN expression ';'
+                            {
+                                yyerrok;
+                                $$ = newStmtNode(ReturnK);
+                                $$->child[0] = $2;
+                                $$->lineno = $1->linenum;
+                            }
+                        ;
 
-iterRange : simpleExp TO simpleExp {$$ = newStmtNode(RangeK); $$->child[0] = $1; $$->child[1] = $3; $$->lineno = $2->linenum;}
-          | simpleExp TO simpleExp BY simpleExp {$$ = newStmtNode(RangeK); $$->child[0] = $1; $$->child[1] = $3; $$->child[2] = $5; $$->lineno = $2->linenum;}
-          | simpleExp TO error {$$ = NULL;}
-          | error BY error {$$ = NULL; yyerrok;}
-          | simpleExp TO simpleExp BY error {$$ = NULL;}
-          ;
+breakStmt               : BREAK ';'
+                            {
+                                $$ = newStmtNode(BreakK);
+                                $$->lineno = $1->linenum;
+                            }
+                        ;
 
-unmatched : IF error THEN stmt {$$ = NULL; yyerrok;}
-          | IF error THEN matched ELSE unmatched {$$ = NULL; yyerrok;}
+expression              : mutable assignop expression
+                            {
+                                $$ = newExpNode(AssignK);
+                                $$->child[0] = $1;
+                                $$->child[1] = $3;  
+                                $$->op = $2->numValue;
+                                $$->attr.name = $2->tokenstr; 
+                                $$->lineno = $2->linenum;
+                            }
+                        | mutable INC
+                            {
+                                yyerrok;
+                                $$ = newExpNode(AssignK);
+                                $$->child[0] = $1;
+                                $$->op = 6;
+                                $$->attr.name = $2->tokenstr; 
+                                $$->lineno = $2->linenum;
+                            }
+                        | mutable DEC 
+                            {
+                                yyerrok;
+                                $$ = newExpNode(AssignK);
+                                $$->child[0] = $1;
+                                $$->op = 7;
+                                $$->attr.name = $2->tokenstr; 
+                                $$->lineno = $2->linenum;
+                            }
+                        | simpleExpression       
+                            { $$ = $1; }
+                        | error assignop error                 
+                            { $$ = NULL; }
+                        | error INC                            
+                            { yyerrok; $$ = NULL; }
+                        | error DEC                            
+                            { yyerrok; $$ = NULL; }
+                        ;
 
-returnStmt : RETURN ';' { $$ = newStmtNode(ReturnK); $$->lineno = $1->linenum;}
-           | RETURN exp ';' {$$ = newStmtNode(ReturnK); $$->child[0] = $2; $$->lineno = $1->linenum; yyerrok;}
-           | RETURN error ';' {$$ = NULL; yyerrok;}
-           ;
+assignop                : '='
+                            { $1->numValue = 1; $$ = $1; }
+                        | ADDASS
+                            { $1->numValue = 2; $$ = $1; }
+                        | SUBASS
+                            { $1->numValue = 3; $$ = $1; }
+                        | MULASS
+                            { $1->numValue = 4; $$ = $1; }
+                        | DIVASS
+                            { $1->numValue = 5; $$ = $1; }
 
-breakStmt : BREAK ';' {$$ = newStmtNode(BreakK);$$->lineno = $1->linenum;}
-          ;
+simpleExpression        : simpleExpression OR andExpression
+                            {
+                                $$ = newExpNode(OpK);
+                                $$->child[0] = $1;
+                                $$->child[1] = $3;  
+                                $$->op = 1;         
+                                $$->attr.name = $2->tokenstr; 
+                                $$->lineno = $2->linenum;
+                            }
+                        | andExpression  
+                            { $$ = $1; }
+                        | simpleExpression OR error                   
+                            { $$=NULL;}
+                        ;
 
-exp : mutable assignop exp {$$ = newExpNode(AssignK); $$->child[0] = $1; $$->child[1] = $3;  $$->op = $2->op; $$->attr.name = $2->attr.name; $$->lineno = $2->lineno; }
-    | mutable INC          {$$ = newExpNode(AssignK);$$->child[0] = $1;$$->op = 6;$$->attr.name = $2->tokenstr; $$->lineno = $2->linenum;}
-    | mutable DEC          {$$ = newExpNode(AssignK);$$->child[0] = $1;$$->op = 7;$$->attr.name = $2->tokenstr; $$->lineno = $2->linenum;}
-    | simpleExp
-    | error assignop exp {$$ = NULL; yyerrok;}
-    | mutable assignop error {$$ = NULL;}
-    | error INC {$$ = NULL; yyerrok;}
-    | error DEC {$$ = NULL; yyerrok;}
-    ;
+andExpression           : andExpression AND unaryRelExpression
+                            {
+                                $$ = newExpNode(OpK);
+                                $$->child[0] = $1;
+                                $$->child[1] = $3;  
+                                $$->op = 2;
+                                $$->attr.name = $2->tokenstr; 
+                                $$->lineno = $2->linenum;
+                            }
+                        | unaryRelExpression
+                            { $$ = $1; }
+                        | andExpression AND error                      
+                            { $$ = NULL; }
+ 
+                        ;
 
-assignop : ASGN   {$$ = newExpNode(AssignK); $$->op = 1; $$->attr.name = $1->tokenstr; $$->lineno = $1->linenum;}
-         | ADDASS {$$ = newExpNode(AssignK); $$->op = 3; $$->attr.name = $1->tokenstr; $$->lineno = $1->linenum;}
-         | SUBASS {$$ = newExpNode(AssignK); $$->op = 3; $$->attr.name = $1->tokenstr; $$->lineno = $1->linenum;}
-         | MULASS {$$ = newExpNode(AssignK); $$->op = 3; $$->attr.name = $1->tokenstr; $$->lineno = $1->linenum;}
-         | DIVASS {$$ = newExpNode(AssignK); $$->op = 3; $$->attr.name = $1->tokenstr; $$->lineno = $1->linenum;}
-         ;
+unaryRelExpression      : NOT unaryRelExpression
+                            {
+                                $$ = newExpNode(OpK);
+                                $$->child[0] = $2;
+                                $$->op = 3;
+                                $$->attr.name = $1->tokenstr; 
+                                $$->lineno = $1->linenum;
+                            }
+                        | relExpression
+                            { $$ = $1; }
+                        | NOT error                            
+                            { $$ = NULL; }
+                        ;
 
-simpleExp : simpleExp OR andExp {$$ = newExpNode(OpK); $$->child[0] = $1;$$->child[1] = $3;  $$->op = 1;$$->attr.name = $2->tokenstr; $$->lineno = $2->linenum;}
-          | andExp
-          | simpleExp OR error {$$ = NULL;}
-          ;
+relExpression           : sumExpression relop sumExpression
+                            {
+                                $$ = newExpNode(OpK);
+                                $$->child[0] = $1;
+                                $$->child[1] = $3;  
+                                $$->op = 4;
+                                $$->attr.name = $2->tokenstr; 
+                                $$->lineno = $2->linenum;
+                            }
+                        | sumExpression  
+                            { $$ = $1; }
+                        | sumExpression relop error                   
+                            { $$ = NULL; }
+                        | error relop sumExpression                   
+                            { yyerrok; $$ = NULL; }
+                        ;
 
-andExp : andExp AND unaryRelExp {$$ = newExpNode(OpK);$$->child[0] = $1;$$->child[1] = $3;  $$->op = 2;$$->attr.name = $2->tokenstr; $$->lineno = $2->linenum; }
-       | unaryRelExp
-       | andExp AND error {$$ = NULL;}
-       ;
+relop                   : LESSEQ
+                            { $$ = $1; }
+                        | '<'
+                            { $$ = $1; }
+                        | '>'
+                            { $$ = $1; }
+                        | GRTEQ
+                            { $$ = $1; }
+                        | EQ
+                            { $$ = $1; }
+                        | NOTEQ
+                            { $$ = $1; }
+                        ;
 
-unaryRelExp : NOT unaryRelExp {$$ = newExpNode(OpK);$$->child[0] = $2;$$->op = 3;$$->attr.name = $1->tokenstr; $$->lineno = $1->linenum;}
-            | relExp
-            | NOT error {$$ = NULL;}
-            ;
+sumExpression           : sumExpression sumop mulExpression
+                            {
+                                $$ = newExpNode(OpK);
+                                $$->child[0] = $1;
+                                $$->child[1] = $3;  
+                                $$->op = 5;
+                                $$->attr.name = $2->tokenstr; 
+                                $$->lineno = $2->linenum;
+                            }
+                        | mulExpression
+                            { $$ = $1; }
+                        | sumExpression sumop error                   
+                            { yyerrok; $$ = NULL; }
+                        ;
 
-relExp : sumExp relop sumExp  {$$ = newExpNode(OpK);$$->child[0] = $1;$$->child[1] = $3;  $$->op = 4;$$->attr.name = $2->tokenstr; $$->lineno = $2->linenum;}
-       | sumExp
-       ;
+sumop                   : '+'
+                            { $$ = $1; }
+                        | '-'
+                            { $$ = $1; }
+                        ;
 
-relop : GT 
-      | GEQ 
-      | LT 
-      | LEQ 
-      | EQ 
-      | NEQ 
-      ;
+mulExpression           : mulExpression mulop unaryExpression
+                            {
+                                $$ = newExpNode(OpK);
+                                $$->child[0] = $1;
+                                $$->child[1] = $3;  
+                                $$->op = 6;
+                                $$->attr.name = $2->tokenstr; 
+                                $$->lineno = $2->linenum;
+                            }
+                        | unaryExpression
+                            { $$ = $1; }
+                        | mulExpression mulop error                     
+                            { $$ = NULL; }
+                        ;
 
-sumExp : sumExp sumop mulExp {$$ = newExpNode(OpK);$$->child[0] = $1;$$->child[1] = $3;  $$->op = 5;$$->attr.name = $2->tokenstr; $$->lineno = $2->linenum;}
-      | mulExp
-      | sumExp sumop error {$$ = NULL;}
-      ;
+mulop                   : '*'
+                            { $$ = $1; }
+                        | '/'
+                            { $$ = $1; }
+                        | '%'
+                            { $$ = $1; }
+                        ;
 
-sumop : ADD 
-      | SUB
-      ;
+unaryExpression         : unaryop unaryExpression
+                            {
+                                $$ = newExpNode(OpK);
+                                $$->child[0] = $2;
+                                $$->op = 7;
+                                $$->attr.name = $1->tokenstr;
+                                $$->lineno = $1->linenum;
+                            }
+                        | factor
+                            { $$ = $1; }
+                        | unaryop error                        
+                            { $$ = NULL; }
+                        ;
 
-mulExp : mulExp mulop unaryExp  {$$ = newExpNode(OpK);$$->child[0] = $1;$$->child[1] = $3;  $$->op = 6;$$->attr.name = $2->tokenstr; $$->lineno = $2->linenum;}
-       | unaryExp
-       | mulExp mulop error {$$ = NULL;}
-       ;
+unaryop                 : '-'
+                            { $$ = $1; }
+                        | '*'
+                            { $$ = $1; }
+                        | '?'
+                            { $$ = $1; }
+                        ;
 
-mulop : MUL 
-      | DIV 
-      | MOD 
-      ;
+factor                  : immutable
+                            { $$ = $1; }
+                        | mutable
+                            { $$ = $1; }                   
+                        ;
 
-unaryExp : unaryop unaryExp {$$ = newExpNode(OpK); $$->child[0] = $2;$$->op = 7;$$->attr.name = $1->tokenstr;$$->lineno = $1->linenum;}
-         | factor
-         |unaryop error {$$ = NULL;}
-         ;
+mutable                 : ID 
+                            { 
+                                $$ = newExpNode(IdK); 
+                                $$->attr.name = $1->tokenstr;
+                                $$->lineno = $1->linenum;
+                            }
+                        | mutable '[' expression ']'
+                            {
+                                $$ = newExpNode(OpK);
+                                $$->child[0] = $1;
+                                $$->child[0]->isArray = true;
+                                $$->child[1] = $3;
+                                $$->op = 8;
+                                $$->attr.name = $2->tokenstr;
+                                $$->lineno = $2->linenum;
+                            }
+                        ;
 
-unaryop : SUB
-        | MUL 
-        | QUESTION 
-        ;
+immutable               : '(' expression ')'
+                            { 
+                                yyerrok;
+                                $$ = $2; 
+                            }
+                        | ID call
+                            { 
+                                $$ = newExpNode(CallK);
+                                $$->child[0] = $2;  
+                                $$->attr.name = $1->tokenstr;
+                                $$->lineno = $1->linenum; 
+                            }
+                        | constant                 
+                            { $$ = $1; }
+                        | '(' error                            
+                            { $$ = NULL; }
+                        | error ')'                            
+                            { yyerrok; $$ = NULL; }
+                        | error '('                            
+                            { yyerrok; $$ = NULL; }
+                        ;
 
-factor : mutable
-       | immutable
-       ;
+call                    : '(' args ')'
+                            { $$ = $2; }
+                        ;
 
-mutable : ID {$$ = newExpNode(IdK);  $$->attr.name = $1->tokenstr; $$->lineno = $1->linenum;}
-        | ID OPENBRACKET exp CLOSEBRACKET {$$ = newExpNode(OpK); treeNode *id = newExpNode(IdK); id->attr.name = $1->tokenstr; id->lineno = $1->linenum;
-                                                                $$->attr.name = $2->name;
-                                                                $$->child[0] = id;
-                                                                $$->child[1] = $3;$$->op = 8;$$->attr.name = $2->tokenstr;$$->lineno = $2->linenum;}
-        ;
+/**** EPSILON ****/
+args                    : argList                
+                            { $$ = $1; }
+                        | /* epsilon */
+                            { $$ = NULL; }
+                        ;
 
-immutable : OPENPAREN exp CLOSEPAREN {$$=$2; yyerrok;}
-          | call
-          | constant
-          | OPENPAREN error {$$ = NULL;}
-          ;
-
-call : ID OPENPAREN args CLOSEPAREN {$$ = newExpNode(CallK); $$->attr.name= $1->name;
-                                        //$$->child[0] = id; 
-                                        $$->child[0] = $3;
-                                        $$->op = 8; 
-                                        $$->attr.name = $1->tokenstr; 
-                                        $$->lineno = $1->linenum; }
-     | error OPENPAREN {$$ = NULL; yyerrok;}
-     ;
-
-args : argList 
-     | { $$ = NULL; }
-     ;
-
-argList : argList COMMA exp {
+argList                 : argList ',' expression
+                            {
                                 if($1 == NULL)
                                 {
                                     $$ = $3;
                                 }
                                 else
                                 {
+                                    yyerrok;
                                     addSibling($1, $3);
                                     $$ = $1;
                                 }
-                            yyerrok;}
-        | exp
-        | argList COMMA error {$$ = NULL;}
-        ;
+                            }
+                        | expression
+                            { $$ = $1; }
+                        | argList ',' error                    
+                            { $$=NULL; }
+                        ;
 
-constant : NUMCONST { $$ = newExpNode(ConstantK); $$->attr.name = $1->tokenstr;$$->expType = Integer;$$->lineno = $1->linenum;}        
-         | CHARCONST  { $$ = newExpNode(ConstantK);  $$->attr.cvalue = $1->cvalue;$$->expType = Char;$$->op = 1; $$->lineno = $1->linenum;}      
-         | STRINGCONST { $$ = newExpNode(ConstantK); $$->attr.string = $1->svalue;$$->expType = Char;$$->lineno = $1->linenum;}   
-         | BOOLCONST  {$$ = newExpNode(ConstantK); $$->attr.value = $1->nvalue;$$->attr.name = $1->tokenstr;$$->expType = boolean;$$->lineno = $1->linenum; }        
-        ; 
+/**** CHECK ****/
+constant                : NUMCONST  
+                            { 
+                                $$ = newExpNode(ConstantK); 
+                                //$$->attr.value = $1->numValue;
+                                $$->attr.name = $1->tokenstr;
+                                $$->expType = Integer;
+                                $$->lineno = $1->linenum;
+                            }        
+                        | CHARCONST   
+                            { 
+                                $$ = newExpNode(ConstantK); 
+                                $$->attr.cvalue = $1->charValue;
+                                //$$->expType = CharInt;
+                                $$->expType = Char;
+                                $$->op = 1;     //char flag - bad idea I know please don't judge;
+                                $$->lineno = $1->linenum;
+                            }      
+                        | STRINGCONST    
+                            { 
+                                $$ = newExpNode(ConstantK); 
+                                $$->attr.string = $1->stringValue;
+                                //$$->attr.name = $1->stringValue;
+                                $$->expType = Char;
+                                $$->lineno = $1->linenum;
+                            }   
+                        | BOOLCONST         
+                            { 
+                                $$ = newExpNode(ConstantK); 
+                                $$->attr.value = $1->numValue;
+                                //$$->attr.name = $1->tokenstr;
+                                $$->expType = Boolean;
+                                $$->lineno = $1->linenum; 
+                            }            
+                        ;
+
 %%
-
-
-
-
 int main(int argc, char **argv)
 {
     extern int opterr;
     extern int optind;
     extern char *optarg;
-    bool memTyping = false;
-    int c; 
-    int dflg = 0; 
-    int pflg = 0; 
-    int filerr = 0; 
-    int Pflg = 0;
-    int hflg = 0;
-    int Mflg = 0;
+    int c, dflg = 0, pflg = 0, filerr = 0, Pflg = 0, hflg = 0, Mflg = 0;
     char *oarg = NULL;
     FILE *filename;
-
 
     while ((c = ourGetopt(argc, argv, (char *)":dpPhM")) != EOF)
     {
@@ -510,7 +1045,7 @@ int main(int argc, char **argv)
                 printf("-M              - print the abstract syntax tree with memory locations\n");
                 printf("-p              - print the abstract syntax tree\n");
                 printf("-P              - print the abstract syntax tree plus type information\n");   
-                break;    
+                break;   
             case '?':
                 printf("Error\n");
                 exit(1);
@@ -533,15 +1068,15 @@ int main(int argc, char **argv)
         optind++;
     }
 
+    //if(filerr == 1||filerr == 0)
     if(filerr == 1)
     {
         filename = fopen(oarg, "r");
+        //filename = fopen("tests/syntaxerr-badchar.c-", "r");
 
         if(filename == NULL)
         {
             printf("ERROR(ARGLIST): source file \"%s\" could not be opened.\n", oarg);
-            printf("Number of warnings: %d\n", numWarns);
-            printf("Number of errors: %d\n", numErrors);
             exit(1);
         }
         else
@@ -554,40 +1089,50 @@ int main(int argc, char **argv)
         yyin = stdin;
     }
 
-    //numErrors = 0;
-    //numWarns = 0;
+    numErrors = 0;
+    numWarnings = 0;
 
     initErrorProcessing();
-
     yyparse();
-    semantic(root);
-    //std::cout << "CHECK HERE" << std::endl;
-    //std::cout << numErrors << std::endl;
 
-    if(numErrors == 0 )
+    if(numErrors == 0)
     {
         if(pflg) 
         {
-            printTree(root, 1, 0);
+            printTree(savedTree, 1, 0);
         }
 
-        //symbolTable = new SymbolTable(); 
+        semantic(savedTree);
 
         if(Pflg) 
         {
-          
-            semanticPrintTree(root, 1, 0, memTyping);
+            semanticPrintTree(savedTree, 1, 0);
         }
-
+        
         if(Mflg){
-        memTyping = true;
-        semanticPrintTree(root, 1, 0, memTyping);
+        semanticPrintTree(savedTree, 1, 0);
         }
+
+        if(filerr == 1)
+        {
+            //Replaces c- with tm for file
+            char * codefile;
+            int fnlen = strcspn(oarg, ".");
+            codefile = (char *) calloc(fnlen+4, sizeof(char));
+            strncpy(codefile, oarg, fnlen);
+            strcat(codefile, ".tm");
+            code = fopen(codefile, "w");
+            if(code == NULL)
+            {
+                printf("Unable to open %s\n", codefile);
+            }
+            codeGen(savedTree);
+            fclose(code);
+        }
+
     }
-
-
-    
-    printf("Number of warnings: %d\n", numWarns);
+    // printf("Offset for end of global space: %d\n", Goffset);
+    printf("Number of warnings: %d\n", numWarnings);
     printf("Number of errors: %d\n", numErrors);
 
     return 0;
